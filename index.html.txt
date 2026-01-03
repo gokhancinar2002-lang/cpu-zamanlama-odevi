@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>İşletim Sistemleri Ödevi - CPU Zamanlama</title>
+    <style>
+        /* Temel Sayfa Düzeni */
+        body {
+            font-family: 'Times New Roman', Times, serif; /* Daha akademik font */
+            background-color: #fdfdfd;
+            color: #333;
+            margin: 20px;
+            line-height: 1.6;
+        }
+        h1, h2, h3 {
+            border-bottom: 2px solid #444;
+            padding-bottom: 10px;
+            color: #222;
+        }
+        .kutu {
+            border: 1px solid #ccc;
+            padding: 20px;
+            margin-bottom: 20px;
+            background: #fff;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        /* Tablo Tasarımı */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            font-size: 14px;
+        }
+        table, th, td {
+            border: 1px solid #888;
+        }
+        th, td {
+            padding: 8px;
+            text-align: center;
+        }
+        th {
+            background-color: #eee;
+        }
+
+        /* Gantt Şeması Görünümü */
+        .gantt-sema {
+            display: flex;
+            margin: 20px 0;
+            overflow-x: auto;
+            border: 1px solid #000;
+            padding: 2px;
+            background: #f9f9f9;
+        }
+        .cubuk {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            border-right: 1px solid #000;
+            min-width: 30px;
+            height: 50px;
+            font-size: 12px;
+            position: relative;
+            color: white;
+            font-weight: bold;
+        }
+        .cubuk span {
+            position: absolute;
+            bottom: -20px;
+            left: -5px;
+            color: #000;
+            font-size: 10px;
+        }
+        /* Renkler */
+        .renk-idle { background-color: #ddd; color: #333; }
+        .renk-islem { background-color: #4a90e2; }
+
+        /* Butonlar ve Girdiler */
+        input, button {
+            padding: 8px;
+            font-size: 14px;
+        }
+        button {
+            background-color: #333;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #555;
+        }
+
+        /* Log Alanı */
+        .log-alani {
+            background-color: #f4f4f4;
+            border: 1px solid #ccc;
+            height: 200px;
+            overflow-y: scroll;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-line;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="kutu">
+        <h1>CPU Zamanlama Simülasyonu</h1>
+        <p>Lütfen işlemci süreçlerini içeren CSV dosyasını seçiniz.</p>
+        
+        <div>
+            <label>Dosya Seç: </label>
+            <input type="file" id="dosyaInput" accept=".csv" />
+        </div>
+        <br>
+        <div>
+            <label>Round Robin Zaman Dilimi (Quantum): </label>
+            <input type="number" id="quantumSure" value="4" style="width: 50px;">
+        </div>
+        <br>
+        <button onclick="simulasyonuBaslat()">Simülasyonu Çalıştır</button>
+    </div>
+
+    <div id="sonucAlani">
+        </div>
+
+<script>
+    // --- VERİ YAPILARI ---
+
+    // Bir işlemi temsil eden sınıf (Nesne yapısı)
+    function Islem(id, varis, patlama, oncelik) {
+        this.id = id;
+        this.varisZamani = parseInt(varis);     // Arrival Time
+        this.patlamaZamani = parseInt(patlama); // Burst Time
+        this.oncelik = parseInt(oncelik);       // Priority
+        
+        // Hesaplama sırasında kullanılacak değişkenler
+        this.kalanSure = this.patlamaZamani;
+        this.baslamaZamani = -1;
+        this.bitisZamani = 0;
+        this.beklemeZamani = 0;
+        this.donusZamani = 0; // Turnaround Time
+    }
+
+    // --- TEMEL FONKSİYONLAR ---
+
+    function simulasyonuBaslat() {
+        var dosyaInput = document.getElementById('dosyaInput');
+        var quantum = parseInt(document.getElementById('quantumSure').value);
+        var sonucAlani = document.getElementById('sonucAlani');
+        
+        sonucAlani.innerHTML = ""; // Önceki sonuçları temizle
+
+        if (dosyaInput.files.length === 0) {
+            alert("Lütfen önce bir CSV dosyası yükleyin!");
+            return;
+        }
+
+        var okuyucu = new FileReader();
+        okuyucu.onload = function(e) {
+            var icerik = e.target.result;
+            var islemListesi = csvCozumle(icerik);
+
+            // CSV hatası kontrolü
+            if (islemListesi.length === 0) {
+                sonucAlani.innerHTML = "<p>Dosya okunamadı veya format hatalı.</p>";
+                return;
+            }
+
+            // Algoritmaları sırasıyla çalıştır
+            algoritmaCalistir("FCFS (İlk Gelen İlk Hizmet Alır)", "FCFS", islemListesi, quantum);
+            algoritmaCalistir("SJF (En Kısa İş Önce - Kesintili)", "SJF_PRE", islemListesi, quantum);
+            algoritmaCalistir("SJF (En Kısa İş Önce - Kesintisiz)", "SJF_NON", islemListesi, quantum);
+            algoritmaCalistir("Round Robin (Sıralı Döngü)", "RR", islemListesi, quantum);
+            algoritmaCalistir("Öncelik Tabanlı (Kesintili)", "PRIO_PRE", islemListesi, quantum);
+            algoritmaCalistir("Öncelik Tabanlı (Kesintisiz)", "PRIO_NON", islemListesi, quantum);
+        };
+        okuyucu.readAsText(dosyaInput.files[0]);
+    }
+
+    // CSV dosyasını satır satır okuyan fonksiyon
+    function csvCozumle(metin) {
+        var satirlar = metin.trim().split('\n');
+        var islemler = [];
+
+        // İlk satır başlık mı kontrol et
+        var baslangic = 0;
+        if (satirlar[0].toLowerCase().indexOf('id') !== -1) {
+            baslangic = 1;
+        }
+
+        for (var i = baslangic; i < satirlar.length; i++) {
+            var sutunlar = satirlar[i].split(',');
+            if (sutunlar.length >= 3) {
+                var id = sutunlar[0].trim();
+                var varis = sutunlar[1].trim();
+                var patlama = sutunlar[2].trim();
+                var oncelik = sutunlar[3] ? sutunlar[3].trim() : 1; // Eğer yoksa 1 olsun
+
+                islemler.push(new Islem(id, varis, patlama, oncelik));
+            }
+        }
+        return islemler;
+    }
+
+    // --- ALGORİTMA MANTIĞI ---
+
+    function algoritmaCalistir(baslik, tip, hamVeri, quantum) {
+        // Verilerin kopyasını oluştur (Orijinal veriyi bozmamak için)
+        var islemler = [];
+        for (var i = 0; i < hamVeri.length; i++) {
+            var p = hamVeri[i];
+            islemler.push(new Islem(p.id, p.varisZamani, p.patlamaZamani, p.oncelik));
+        }
+
+        var zamanCizelges = []; // Gantt chart verisi
+        var baglamDegistirmeSayisi = 0;
+        var logMetni = "SİMÜLASYON BAŞLADI (" + baslik + ")\n";
+
+        // Algoritmaya göre işlem yap
+        var toplamSure = 0;
+        
+        if (tip === "RR") {
+            // Round Robin için özel mantık fonksiyonu
+            var sonuc = roundRobinHesapla(islemler, quantum);
+            zamanCizelges = sonuc.cizelge;
+            baglamDegistirmeSayisi = sonuc.cs;
+            toplamSure = sonuc.sure;
+            logMetni += sonuc.log;
+        } else {
+            // Diğer algoritmalar için genel zamanlayıcı fonksiyonu
+            var sonuc = genelZamanlayici(islemler, tip);
+            zamanCizelges = sonuc.cizelge;
+            baglamDegistirmeSayisi = sonuc.cs;
+            toplamSure = sonuc.sure;
+            logMetni += sonuc.log;
+        }
+
+        // Sonuçları Ekrana Bas
+        sonucYazdir(baslik, islemler, zamanCizelges, baglamDegistirmeSayisi, toplamSure, logMetni);
+    }
+
+    // FCFS, SJF ve Priority için Ortak Mantık
+    function genelZamanlayici(islemler, tip) {
+        var suankiZaman = 0;
+        var tamamlananSayisi = 0;
+        var cizelge = [];
+        var log = "";
+        var oncekiIslemId = null;
+        var baglamDegistirme = 0;
+        var n = islemler.length;
+
+        // Kesintili mi?
+        var kesintiliMi = (tip === "SJF_PRE" || tip === "PRIO_PRE");
+
+        // Zamanı en erken gelen işleme çek (Boşuna 0'dan dönmesin)
+        var minVaris = 10000;
+        for(var i=0; i<n; i++) if(islemler[i].varisZamani < minVaris) minVaris = islemler[i].varisZamani;
+        
+        if (minVaris > 0) {
+            cizelge.push({id: "IDLE", basla: 0, bit: minVaris});
+            suankiZaman = minVaris;
+        }
+
+        // Ana Döngü: Tüm işlemler bitene kadar
+        while (tamamlananSayisi < n) {
+            // 1. Hazır olan işlemleri bul
+            var hazirKuyruk = [];
+            for (var i = 0; i < n; i++) {
+                if (islemler[i].varisZamani <= suankiZaman && islemler[i].kalanSure > 0) {
+                    hazirKuyruk.push(islemler[i]);
+                }
+            }
+
+            // 2. Eğer kuyruk boşsa (CPU boşta)
+            if (hazirKuyruk.length === 0) {
+                log += "Zaman " + suankiZaman + ": Kuyruk boş, işlemci beklemede.\n";
+                // Zamanı bir artır
+                var sonBlok = cizelge[cizelge.length - 1];
+                if (sonBlok && sonBlok.id === "IDLE") {
+                    sonBlok.bit = suankiZaman + 1;
+                } else {
+                    cizelge.push({id: "IDLE", basla: suankiZaman, bit: suankiZaman + 1});
+                }
+                suankiZaman++;
+                continue;
+            }
+
+            // 3. Algoritmaya göre bir işlem seç
+            var secilenIslem = hazirKuyruk[0];
+
+            if (tip === "FCFS") {
+                // Varısa göre sırala
+                hazirKuyruk.sort(function(a, b) { return a.varisZamani - b.varisZamani; });
+                secilenIslem = hazirKuyruk[0];
+            } 
+            else if (tip.indexOf("SJF") !== -1) {
+                // Kalan süreye göre sırala (Küçükten büyüğe)
+                hazirKuyruk.sort(function(a, b) {
+                    if (a.kalanSure === b.kalanSure) return a.varisZamani - b.varisZamani;
+                    return a.kalanSure - b.kalanSure;
+                });
+                secilenIslem = hazirKuyruk[0];
+            } 
+            else if (tip.indexOf("PRIO") !== -1) {
+                // Önceliğe göre sırala (Küçük sayı = Yüksek öncelik varsayımı)
+                hazirKuyruk.sort(function(a, b) {
+                    if (a.oncelik === b.oncelik) return a.varisZamani - b.varisZamani;
+                    return a.oncelik - b.oncelik;
+                });
+                secilenIslem = hazirKuyruk[0];
+            }
+
+            // Kesintisiz (Non-Preemptive) ise:
+            // Eğer bir önceki işlem bitmediyse ve hala çalışıyorsa onu değiştiremeyiz.
+            if (!kesintiliMi && oncekiIslemId !== null) {
+                // Önceki işlem hala kuyrukta mı (bitmemiş mi)?
+                var oncekiIslemObj = null;
+                for(var k=0; k<n; k++) { if(islemler[k].id === oncekiIslemId) oncekiIslemObj = islemler[k]; }
+                
+                if (oncekiIslemObj && oncekiIslemObj.kalanSure > 0) {
+                    secilenIslem = oncekiIslemObj; // Değiştirme, aynen devam et
+                }
+            }
+
+            // 4. Bağlam Değiştirme Kontrolü
+            if (oncekiIslemId !== null && oncekiIslemId !== secilenIslem.id) {
+                baglamDegistirme++;
+                log += "Zaman " + suankiZaman + ": Bağlam değişti (" + oncekiIslemId + " -> " + secilenIslem.id + ")\n";
+            }
+            oncekiIslemId = secilenIslem.id;
+
+            // 5. İşlemi Yürüt (1 birim zaman)
+            secilenIslem.kalanSure--;
+            
+            // Gantt şemasına ekle
+            var sonKayit = cizelge[cizelge.length - 1];
+            if (sonKayit && sonKayit.id === secilenIslem.id) {
+                sonKayit.bit = suankiZaman + 1;
+            } else {
+                cizelge.push({id: secilenIslem.id, basla: suankiZaman, bit: suankiZaman + 1});
+            }
+
+            log += "Zaman " + suankiZaman + ": " + secilenIslem.id + " çalışıyor. (Kalan: " + secilenIslem.kalanSure + ")\n";
+
+            suankiZaman++;
+
+            // 6. İşlem Bitti mi?
+            if (secilenIslem.kalanSure === 0) {
+                secilenIslem.bitisZamani = suankiZaman;
+                secilenIslem.donusZamani = secilenIslem.bitisZamani - secilenIslem.varisZamani;
+                secilenIslem.beklemeZamani = secilenIslem.donusZamani - secilenIslem.patlamaZamani;
+                tamamlananSayisi++;
+                log += "Zaman " + suankiZaman + ": " + secilenIslem.id + " TAMAMLANDI.\n";
+                oncekiIslemId = null; // CPU boşa çıktı
+            }
+        }
+
+        return { cizelge: cizelge, cs: baglamDegistirme, sure: suankiZaman, log: log };
+    }
+
+    // Round Robin Mantığı
+    function roundRobinHesapla(islemler, quantum) {
+        var cizelge = [];
+        var log = "";
+        var kuyruk = [];
+        var suankiZaman = 0;
+        var tamamlanan = 0;
+        var n = islemler.length;
+        var baglamDegistirme = 0;
+        var sonCalisanId = null;
+
+        // Varısa göre sırala
+        islemler.sort(function(a, b) { return a.varisZamani - b.varisZamani; });
+
+        // İlk zaman ayarlaması
+        if (islemler[0].varisZamani > 0) {
+            cizelge.push({id: "IDLE", basla: 0, bit: islemler[0].varisZamani});
+            suankiZaman = islemler[0].varisZamani;
+        }
+
+        // Kuyruğa ilk işlemi at
+        var eklenmeDurumu = []; // Hangi işlem kuyruğa girdi mi kontrolü
+        for(var i=0; i<n; i++) eklenmeDurumu[i] = false;
+
+        // Başlangıç zamanına kadar gelenleri ekle
+        for(var i=0; i<n; i++) {
+            if(islemler[i].varisZamani <= suankiZaman && !eklenmeDurumu[i]) {
+                kuyruk.push(islemler[i]);
+                eklenmeDurumu[i] = true;
+                log += "Zaman " + suankiZaman + ": " + islemler[i].id + " kuyruğa eklendi.\n";
+            }
+        }
+
+        while(tamamlanan < n) {
+            if (kuyruk.length === 0) {
+                // Kuyruk boşsa bir sonraki işlemin gelişine kadar bekle
+                var gelecekIslem = null;
+                for(var i=0; i<n; i++) {
+                    if(!eklenmeDurumu[i]) {
+                        gelecekIslem = islemler[i];
+                        break;
+                    }
+                }
+                
+                if(gelecekIslem) {
+                    cizelge.push({id: "IDLE", basla: suankiZaman, bit: gelecekIslem.varisZamani});
+                    suankiZaman = gelecekIslem.varisZamani;
+                    kuyruk.push(gelecekIslem);
+                    eklenmeDurumu[islemler.indexOf(gelecekIslem)] = true;
+                    log += "Zaman " + suankiZaman + ": IDLE sonrası " + gelecekIslem.id + " geldi.\n";
+                } else {
+                    break; // Yapacak iş kalmadı
+                }
+            }
+
+            var p = kuyruk.shift(); // Kuyruğun başından al
+
+            // Bağlam değiştirme kontrolü
+            if (sonCalisanId !== null && sonCalisanId !== p.id) {
+                baglamDegistirme++;
+                log += "--> Bağlam Değişimi: " + sonCalisanId + " yerine " + p.id + " geçti.\n";
+            }
+            sonCalisanId = p.id;
+
+            // Ne kadar çalışacak?
+            var calismaSuresi = quantum;
+            if (p.kalanSure < quantum) {
+                calismaSuresi = p.kalanSure;
+            }
+
+            cizelge.push({id: p.id, basla: suankiZaman, bit: suankiZaman + calismaSuresi});
+            log += "Zaman " + suankiZaman + "-" + (suankiZaman+calismaSuresi) + ": " + p.id + " çalışıyor.\n";
+            
+            suankiZaman += calismaSuresi;
+            p.kalanSure -= calismaSuresi;
+
+            // Bu süre zarfında yeni gelen var mı?
+            for(var i=0; i<n; i++) {
+                if(islemler[i].varisZamani <= suankiZaman && !eklenmeDurumu[i]) {
+                    kuyruk.push(islemler[i]);
+                    eklenmeDurumu[i] = true;
+                    log += "Zaman " + islemler[i].varisZamani + ": " + islemler[i].id + " yeni geldi, kuyruğa eklendi.\n";
+                }
+            }
+
+            // İşlem bitti mi yoksa kuyruğa geri mi dönecek?
+            if (p.kalanSure > 0) {
+                kuyruk.push(p);
+                log += "Zaman " + suankiZaman + ": " + p.id + " süresi doldu, kuyruğun sonuna atıldı.\n";
+            } else {
+                p.bitisZamani = suankiZaman;
+                p.donusZamani = p.bitisZamani - p.varisZamani;
+                p.beklemeZamani = p.donusZamani - p.patlamaZamani;
+                tamamlanan++;
+                log += "Zaman " + suankiZaman + ": " + p.id + " BİTTİ.\n";
+            }
+        }
+
+        return { cizelge: cizelge, cs: baglamDegistirme, sure: suankiZaman, log: log };
+    }
+
+    // --- EKRANA YAZDIRMA ---
+
+    function sonucYazdir(baslik, islemler, zamanCizelges, baglamDegistirme, toplamSure, logData) {
+        var kutu = document.createElement('div');
+        kutu.className = "kutu";
+
+        // İstatistikleri hesapla
+        var toplamBekleme = 0, maxBekleme = 0;
+        var toplamDonus = 0, maxDonus = 0;
+        
+        for(var i=0; i<islemler.length; i++) {
+            var p = islemler[i];
+            toplamBekleme += p.beklemeZamani;
+            toplamDonus += p.donusZamani;
+            if (p.beklemeZamani > maxBekleme) maxBekleme = p.beklemeZamani;
+            if (p.donusZamani > maxDonus) maxDonus = p.donusZamani;
+        }
+        
+        var ortBekleme = (toplamBekleme / islemler.length).toFixed(2);
+        var ortDonus = (toplamDonus / islemler.length).toFixed(2);
+        
+        // Throughput
+        var throughput = "";
+        var zamanlar = [50, 100, 150, 200];
+        for(var i=0; i<zamanlar.length; i++) {
+            var t = zamanlar[i];
+            var sayi = 0;
+            for(var k=0; k<islemler.length; k++) {
+                if(islemler[k].bitisZamani <= t) sayi++;
+            }
+            throughput += "T=" + t + " için: " + sayi + " adet | ";
+        }
+
+        // Verimlilik: (Toplam Burst / (Toplam Süre + CS süresi))
+        var toplamBurst = 0;
+        for(var i=0; i<islemler.length; i++) toplamBurst += islemler[i].patlamaZamani;
+        var ceza = baglamDegistirme * 0.001; // Soruda verilen sabit
+        var verimlilik = ((toplamBurst / (toplamSure + ceza)) * 100).toFixed(2);
+
+        // HTML İçeriğini Oluştur
+        var html = "<h2>" + baslik + "</h2>";
+        
+        // Tablo
+        html += "<h3>Sonuç Tablosu</h3>";
+        html += "<table><tr><th>İşlem ID</th><th>Varış</th><th>Patlama</th><th>Bitiş</th><th>Bekleme</th><th>Tamamlanma (Turnaround)</th></tr>";
+        for(var i=0; i<islemler.length; i++) {
+            var p = islemler[i];
+            html += "<tr><td>" + p.id + "</td><td>" + p.varisZamani + "</td><td>" + p.patlamaZamani + "</td><td>" + p.bitisZamani + "</td><td>" + p.beklemeZamani + "</td><td>" + p.donusZamani + "</td></tr>";
+        }
+        html += "</table>";
+
+        // Özet Bilgiler
+        html += "<h3>Performans Metrikleri</h3><ul>";
+        html += "<li>Ortalama Bekleme: <b>" + ortBekleme + "</b> (Maks: " + maxBekleme + ")</li>";
+        html += "<li>Ortalama Tamamlanma: <b>" + ortDonus + "</b> (Maks: " + maxDonus + ")</li>";
+        html += "<li>Toplam Bağlam Değiştirme: <b>" + baglamDegistirme + "</b></li>";
+        html += "<li>CPU Verimliliği: <b>%" + verimlilik + "</b></li>";
+        html += "<li>Throughput (İş Tamamlama): " + throughput + "</li>";
+        html += "</ul>";
+
+        // Gantt Şeması
+        html += "<h3>Zaman Çizelges (Gantt)</h3>";
+        html += "<div class='gantt-sema'>";
+        for(var i=0; i<zamanCizelges.length; i++) {
+            var blok = zamanCizelges[i];
+            var genislik = (blok.bit - blok.basla) * 20; // Genişlik ölçeği
+            var renkSinifi = (blok.id === 'IDLE') ? 'renk-idle' : 'renk-islem';
+            html += "<div class='cubuk " + renkSinifi + "' style='min-width:" + genislik + "px; flex-grow:" + (blok.bit - blok.basla) + "'>";
+            html += blok.id;
+            html += "<span>" + blok.basla + "</span>";
+            // Sonuncuya bitişi de ekle
+            if (i === zamanCizelges.length - 1) {
+                html += "<span style='right:-5px; left:auto;'>" + blok.bit + "</span>";
+            }
+            html += "</div>";
+        }
+        html += "</div>";
+
+        // Detaylı Log
+        html += "<h3>Detaylı Olay Günlüğü</h3>";
+        html += "<div class='log-alani'>" + logData + "</div>";
+
+        kutu.innerHTML = html;
+        document.getElementById('sonucAlani').appendChild(kutu);
+    }
+</script>
+
+</body>
+</html>
